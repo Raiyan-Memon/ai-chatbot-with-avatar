@@ -12,11 +12,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "AI Avatar — Raiyan Memon",
+  title: "Ask Raiyan Memon — AI Assistant",
   description:
-    "A talking 3D avatar with lip sync and Google text-to-speech, built by Raiyan Memon.",
+    "An AI assistant that answers questions about Raiyan Memon's experience, projects and skills, spoken by a 3D avatar.",
   authors: [{ name: "Raiyan Memon" }],
   creator: "Raiyan Memon",
+  openGraph: {
+    title: "Ask Raiyan Memon — AI Assistant",
+    description:
+      "Ask about my experience, projects and skills. My AI assistant answers out loud.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }) {

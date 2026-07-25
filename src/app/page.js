@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2Icon, Volume2Icon } from "lucide-react";
+import { Loader2Icon, SendHorizontalIcon } from "lucide-react";
 
 import { Avatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,22 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAudioAnalyser } from "@/hooks/use-audio-analyser";
+
+const OWNER = {
+  name: "Raiyan Memon",
+  initials: "RM",
+  role: "Software Engineer",
+};
+
+// The single clearest signal of what a visitor is allowed to ask. Written as a
+// recruiter would phrase it, not as a feature list.
+const PROMPTS = [
+  "What's your background?",
+  "What tech do you work with?",
+  "Tell me about a recent project",
+  "What are you looking for next?",
+  "How can I reach you?",
+];
 
 const VOICES = [
   { value: "en-US-Chirp3-HD-Aoede", label: "Aoede — warm female" },
@@ -32,7 +48,9 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
+  const [hasAsked, setHasAsked] = useState(false);
   const audioRef = useRef(null);
+  const inputRef = useRef(null);
 
   const { analyser, resume } = useAudioAnalyser(audioRef);
 
@@ -56,6 +74,7 @@ export default function Home() {
 
     setIsLoading(true);
     setError(null);
+    setHasAsked(true);
 
     // The AudioContext starts suspended; this click is the gesture that frees it.
     await resume();
@@ -81,108 +100,143 @@ export default function Home() {
   }
 
   function handleKeyDown(event) {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+    // Enter sends, Shift+Enter makes a new line — the convention every chat
+    // interface uses, so visitors do not have to be told.
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
       handleSubmit(event);
     }
   }
 
-  // A grid with an explicit 1fr row, not flex: the stage needs a definite
-  // height for R3F to measure, and flex-basis alone leaves it short.
+  function askPrompt(prompt) {
+    setText(prompt);
+    inputRef.current?.focus();
+  }
+
   return (
     <div className="grid h-dvh min-w-0 grid-cols-1 grid-rows-[1fr_auto] overflow-hidden">
-      {/* Stage: everything left over after the controls claim their height. */}
       <div className="relative min-h-0 overflow-hidden bg-linear-to-b from-muted/20 to-muted/60">
         <Avatar analyser={analyser} className="absolute inset-0" />
 
-        <div className="pointer-events-none absolute top-5 left-6">
-          <p className="text-sm font-medium text-foreground/80">AI Avatar</p>
-          <p className="text-xs text-muted-foreground">by Raiyan Memon</p>
-        </div>
+        {/* Identity, over a scrim so it stays legible against the avatar. */}
+        <header className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-3 bg-linear-to-b from-background/95 via-background/70 to-transparent px-5 pt-4 pb-10 sm:px-8 sm:pt-6">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
+            {OWNER.initials}
+          </div>
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-base font-semibold text-foreground">
+                {OWNER.name}
+              </h1>
+              <span className="shrink-0 rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                AI
+              </span>
+            </div>
+            <p className="truncate text-xs text-muted-foreground">
+              {OWNER.role} · ask me anything about my work
+            </p>
+          </div>
+        </header>
+
+        {/* Greeting, retired once the visitor has actually asked something. */}
+        {!hasAsked && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-background/95 via-background/70 to-transparent px-6 pt-12 pb-5 text-center">
+            <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
+              Hi — I&apos;m {OWNER.name.split(" ")[0]}&apos;s AI assistant. Ask
+              about my experience, projects or skills and I&apos;ll answer out
+              loud.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="border-t bg-card/90 backdrop-blur-sm">
-        <form
-          onSubmit={handleSubmit}
-          className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-6 py-5"
-        >
-          {error && (
-            <p
-              role="alert"
-              className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              {error}
-            </p>
-          )}
-
-          <div className="relative">
-            <Textarea
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              onKeyDown={handleKeyDown}
-              maxLength={MAX_CHARS}
-              rows={2}
-              placeholder="Type something for your avatar to say…"
-              aria-label="Text to speak"
-              className="h-24 min-h-24 resize-none overflow-y-auto pb-7 field-sizing-fixed"
-            />
-            <span className="pointer-events-none absolute right-3 bottom-2 text-xs tabular-nums text-muted-foreground">
-              {text.length} / {MAX_CHARS}
-            </span>
-          </div>
-
-          {/* Stacked on narrow screens: side by side, the pair's combined
-              minimum width is what forces the whole shell wider than the
-              viewport. */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Select
-              items={VOICES}
-              value={voice}
-              onValueChange={(next) => setVoice(next)}
-            >
-              {/* min-w-0 and w-auto beat the component's own w-fit, which
-                  otherwise stops the row shrinking on narrow screens. */}
-              <SelectTrigger
-                aria-label="Voice"
-                className="h-9 w-auto min-w-0 flex-1"
+        <div className="mx-auto w-full max-w-2xl px-4 pt-3 pb-4 sm:px-6 sm:pb-5">
+          {/* Scrolls sideways rather than wrapping, so the row height is
+              predictable and the stage above never reflows. */}
+          <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {PROMPTS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => askPrompt(prompt)}
+                className="shrink-0 rounded-full border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {VOICES.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button
-              type="submit"
-              size="lg"
-              disabled={!text.trim() || isLoading}
-              className="w-full px-6 sm:w-auto"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2Icon className="animate-spin" />
-                  Generating
-                </>
-              ) : (
-                <>
-                  <Volume2Icon />
-                  Speak
-                </>
-              )}
-            </Button>
+                {prompt}
+              </button>
+            ))}
           </div>
 
-          {/* Always mounted and hidden: the Web Audio graph binds to this node. */}
-          <audio
-            ref={audioRef}
-            src={audioUrl ?? undefined}
-            className="hidden"
-          />
-        </form>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            {error && (
+              <p
+                role="alert"
+                className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                {error}
+              </p>
+            )}
+
+            <div className="relative">
+              <Textarea
+                ref={inputRef}
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                onKeyDown={handleKeyDown}
+                maxLength={MAX_CHARS}
+                rows={2}
+                placeholder={`Ask me anything about ${OWNER.name.split(" ")[0]}…`}
+                aria-label={`Ask a question about ${OWNER.name}`}
+                className="h-20 min-h-20 resize-none overflow-y-auto pr-12 field-sizing-fixed"
+              />
+
+              <Button
+                type="submit"
+                size="icon"
+                disabled={!text.trim() || isLoading}
+                aria-label="Send question"
+                className="absolute right-2 bottom-2 size-8 rounded-full"
+              >
+                {isLoading ? (
+                  <Loader2Icon className="animate-spin" />
+                ) : (
+                  <SendHorizontalIcon />
+                )}
+              </Button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <Select
+                items={VOICES}
+                value={voice}
+                onValueChange={(next) => setVoice(next)}
+              >
+                <SelectTrigger
+                  aria-label="Voice"
+                  size="sm"
+                  className="h-8 w-auto min-w-0 max-w-52 text-xs text-muted-foreground"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {VOICES.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <p className="shrink-0 text-[11px] text-muted-foreground">
+                Press Enter to send
+              </p>
+            </div>
+
+            {/* Always mounted and hidden: the Web Audio graph binds to this node. */}
+            <audio ref={audioRef} src={audioUrl ?? undefined} className="hidden" />
+          </form>
+        </div>
       </div>
     </div>
   );
