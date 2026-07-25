@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // `createMediaElementSource` may only ever be called once for a given element —
 // a second call throws. React Strict Mode runs effects twice in development, and
@@ -51,10 +51,13 @@ export function useAudioAnalyser(audioRef) {
     setAnalyser(graph.analyser);
   }, [audioRef]);
 
-  async function resume() {
+  // Stable across renders: callers pass this into effect dependency arrays,
+  // and a fresh closure every render would make those effects re-fire on
+  // every unrelated state change.
+  const resume = useCallback(async () => {
     const context = contextRef.current;
     if (context?.state === "suspended") await context.resume();
-  }
+  }, []);
 
   return { analyser, resume };
 }

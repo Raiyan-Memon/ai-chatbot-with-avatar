@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2Icon, SendHorizontalIcon } from "lucide-react";
+import { Loader2Icon, SendHorizontalIcon, Volume2Icon } from "lucide-react";
 
 import { Avatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
@@ -62,8 +62,20 @@ export default function Home() {
   const [answer, setAnswer] = useState(null);
   const [avatarReady, setAvatarReady] = useState(false);
   const [greetingBlocked, setGreetingBlocked] = useState(false);
+  // True only once sound has genuinely been confirmed audible — not merely
+  // attempted — so the CTA doesn't declare success during a still-muted
+  // autoplay probe.
+  const [greetingHeard, setGreetingHeard] = useState(false);
   const [greetingAttempted, setGreetingAttempted] = useState(false);
   const [interacted, setInteracted] = useState(false);
+  const [greetingPlaying, setGreetingPlaying] = useState(false);
+  // Lazy initializer, not a bare value: this component's first render happens
+  // on the server, where navigator doesn't exist at all.
+  const [isOnline, setIsOnline] = useState(
+    () =>
+      // typeof navigator === "undefined" ? true : navigator.onLine,
+      true,
+  );
   const audioRef = useRef(null);
   const greetingAudioRef = useRef(null);
   const speechBlobUrlRef = useRef(null);
@@ -92,17 +104,44 @@ export default function Home() {
     setLastAsked(null);
     setAnswer(null);
     setGreetingBlocked(false);
+    setGreetingHeard(false);
     setGreetingAttempted(false);
     setInteracted(false);
   }
 
   const { analyser, resume } = useAudioAnalyser(audioRef);
+  // A second, independent tap: the hook keys its graph off the element itself,
+  // so the greeting audio gets its own analyser rather than sharing the one
+  // wired to the response <audio> element above.
+  const { analyser: greetingAnalyser, resume: resumeGreeting } =
+    useAudioAnalyser(greetingAudioRef);
+
+  // Whichever is actually making sound drives the mouth. Only one of the two
+  // ever plays at once — starting a response pauses the greeting.
+  const activeAnalyser = greetingPlaying ? greetingAnalyser : analyser;
 
   // Release the previous blob when a new one replaces it, and on unmount.
   useEffect(() => {
     return () => {
       if (speechBlobUrlRef.current)
         URL.revokeObjectURL(speechBlobUrlRef.current);
+    };
+  }, []);
+
+  // navigator.onLine only reflects the network interface (Wi-Fi/ethernet up
+  // or down) — it can't confirm the internet itself is reachable, since no
+  // browser API does that. It still catches the common real cases: Wi-Fi
+  // switched off, airplane mode, a dropped connection.
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -116,18 +155,24 @@ export default function Home() {
       audio.muted = true;
       audio.currentTime = 0;
 
+      // Best-effort: without a real user gesture this typically stays
+      // suspended, which is exactly why analyser data (and so lip-sync) reads
+      // as silence until the visitor actually interacts.
+      resumeGreeting();
+
       audio
         .play()
         .then(() => {
           audio.muted = false;
           setGreetingBlocked(false);
+          setGreetingHeard(true);
         })
         .catch(() => setGreetingBlocked(true))
         .finally(() => setGreetingAttempted(true));
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [avatarReady, interacted, greetingAttempted]);
+  }, [avatarReady, interacted, greetingAttempted, resumeGreeting]);
 
   useEffect(() => {
     if (!audioUrl) return;
@@ -152,12 +197,14 @@ export default function Home() {
 
       audio.muted = true;
       audio.currentTime = 0;
+      resumeGreeting();
 
       audio
         .play()
         .then(() => {
           audio.muted = false;
           setGreetingBlocked(false);
+          setGreetingHeard(true);
         })
         .catch(() => {
           setGreetingAttempted(true);
@@ -176,13 +223,23 @@ export default function Home() {
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [avatarReady, interacted, greetingBlocked]);
+  }, [avatarReady, interacted, greetingBlocked, resumeGreeting]);
 
   async function handleSubmit(event) {
     event.preventDefault();
 
     const value = text.trim();
     if (!value || isLoading) return;
+
+    // Caught before spending a request (and a slice of the rate limit) on
+    // something guaranteed to fail. Nothing else changes — the question stays
+    // in the box exactly as typed, ready to resend once back online.
+    if (!isOnline) {
+      setError(
+        "I can't reach the internet from here, so I can't hear you right now — check your connection and send that again.",
+      );
+      return;
+    }
 
     setInteracted(true);
     if (greetingAudioRef.current) {
@@ -232,7 +289,16 @@ export default function Home() {
       speechBlobUrlRef.current = objectUrl;
       setAudioUrl(objectUrl);
     } catch (err) {
-      setError(err.message);
+      // fetch() itself throws a TypeError for a network failure (dropped
+      // Wi-Fi, DNS gone, etc.) — distinct from the Error instances thrown
+      // above carrying a real server message, so this can't misfire on those.
+      const networkLost = err instanceof TypeError;
+
+      setError(
+        networkLost
+          ? "I lost the connection partway through — check you're online and send that again."
+          : err.message,
+      );
       // Only worth restoring if nothing came back — once there is an answer on
       // screen, refilling the box would just look like the question failed.
       if (!reply) setText(value);
@@ -261,13 +327,29 @@ export default function Home() {
   }
 
   async function playGreeting() {
-    setInteracted(true);
     const audio = greetingAudioRef.current;
     if (!audio) return;
 
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+    }
+
+    // A real click, so this is the one path guaranteed to unlock both the
+    // element and the analyser's AudioContext behind it.
+    await resumeGreeting();
+
+    // The failed auto-attempt below leaves the element muted forever — it
+    // only unmutes on success, never on the (normal, expected) rejection —
+    // so without this, a genuine click plays silently: the play event still
+    // fires and the avatar still reacts, but no sound reaches the speakers.
+    audio.muted = false;
+    audio.currentTime = 0;
     audio
       .play()
-      .then(() => setGreetingBlocked(false))
+      .then(() => {
+        setGreetingBlocked(false);
+        setGreetingHeard(true);
+      })
       .catch(() => setGreetingBlocked(true));
   }
 
@@ -278,8 +360,9 @@ export default function Home() {
     <div className="grid h-dvh min-w-0 grid-rows-[38vh_1fr] overflow-hidden lg:grid-cols-[1fr_27rem] lg:grid-rows-1">
       <div className="relative min-h-0 min-w-0 overflow-hidden bg-linear-to-b from-muted/30 to-muted/70">
         <Avatar
-          analyser={analyser}
+          analyser={activeAnalyser}
           thinking={isLoading}
+          greeting={greetingPlaying}
           name={ASSISTANT}
           onReady={() => setAvatarReady(true)}
           className="absolute inset-0"
@@ -295,7 +378,9 @@ export default function Home() {
 
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="truncate text-base font-semibold">{OWNER.name}</h1>
+                <h1 className="truncate text-base font-semibold">
+                  {OWNER.name}
+                </h1>
                 <span className="shrink-0 rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                   AI
                 </span>
@@ -306,12 +391,45 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="ml-auto">
-            <Button type="button" variant="outline" size="sm" onClick={resetPage}>
+          <div className="ml-auto flex items-center gap-1.5">
+            {/* Kept small and permanent once sound is confirmed working — the
+                big CTA below only needs to exist until that first listen. */}
+            {greetingHeard && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={playGreeting}
+                title="Replay Zaira's introduction"
+                aria-label="Replay Zaira's introduction"
+                className="size-8"
+              >
+                <Volume2Icon className="size-4" />
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={resetPage}
+            >
               Reset
             </Button>
           </div>
         </header>
+
+        {/* Proactive, not just a reaction to a failed send — this appears the
+            moment the network interface goes down, in Zaira's own voice like
+            every other message here. */}
+        {!isOnline && (
+          <p
+            role="status"
+            className="border-b bg-destructive/10 px-4 py-2 text-center text-xs text-destructive sm:px-6"
+          >
+            I&apos;ve lost your internet connection, so I can&apos;t hear or
+            answer anything right now.
+          </p>
+        )}
 
         {/* Scrolls independently. This is where answers will go. */}
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 sm:gap-5 sm:px-6 sm:py-5">
@@ -359,21 +477,47 @@ export default function Home() {
               ))}
             </div>
 
-            {!interacted && (
-              <div className="flex flex-col gap-2 rounded-2xl border border-border bg-background p-3 text-sm text-muted-foreground">
-                <p>{GREETING_TEXT}</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={playGreeting} size="sm">
-                    Play greeting
-                  </Button>
-                  {greetingBlocked && (
-                    <p className="text-xs text-muted-foreground">
-                      If you don&apos;t hear audio, your tab may be muted or the
-                      browser blocked autoplay. Click the button again to try
-                      it.
-                    </p>
-                  )}
+            {/* Most first-time visitors will land here: browsers block
+                autoplay-with-sound almost universally, so for many people this
+                click is the only way they ever hear Zaira at all — styled as
+                the primary thing it actually is, not a minor fallback link.
+                Collapses for good the moment sound is confirmed audible. */}
+            {!interacted && !greetingHeard && (
+              <div className="flex flex-col gap-3 rounded-2xl border border-border bg-background p-3.5 text-sm">
+                <div className="flex items-start gap-2.5">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/10">
+                    <Volume2Icon className="size-4 text-foreground/70" />
+                  </span>
+                  <p className="pt-1 leading-snug text-muted-foreground">
+                    {GREETING_TEXT}
+                  </p>
                 </div>
+
+                <Button
+                  type="button"
+                  onClick={playGreeting}
+                  size="sm"
+                  className="w-full"
+                >
+                  {greetingPlaying ? (
+                    <>
+                      <Volume2Icon className="animate-pulse" />
+                      Playing…
+                    </>
+                  ) : greetingBlocked ? (
+                    "Tap to hear Zaira"
+                  ) : (
+                    "Play greeting"
+                  )}
+                </Button>
+
+                {greetingBlocked && (
+                  <p className="text-xs text-muted-foreground">
+                    Your browser blocks sound until you interact with the page —
+                    that&apos;s normal, not a bug. Tap the button above to hear
+                    her.
+                  </p>
+                )}
               </div>
             )}
 
@@ -410,7 +554,7 @@ export default function Home() {
             <Button
               type="submit"
               size="icon"
-              disabled={!text.trim() || isLoading}
+              disabled={!text.trim() || isLoading || !isOnline}
               aria-label="Send question"
               className="absolute right-2 bottom-2 size-8 rounded-full"
             >
@@ -459,6 +603,12 @@ export default function Home() {
             ref={greetingAudioRef}
             src={GREETING_AUDIO}
             preload="auto"
+            // The real signal for whether the greeting is audible right now —
+            // more trustworthy than inferring it from play()'s resolved
+            // promise, which can resolve for a muted, silent attempt too.
+            onPlay={() => setGreetingPlaying(true)}
+            onPause={() => setGreetingPlaying(false)}
+            onEnded={() => setGreetingPlaying(false)}
             className="hidden"
           />
         </form>

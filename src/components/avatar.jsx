@@ -32,6 +32,17 @@ const BLINK_TARGETS = [
   "blink",
 ];
 
+// Smile blend shapes, checked in the same generator-priority order as above.
+const SMILE_TARGETS = [
+  "mouthSmile", // ARKit
+  "Fcl_MTH_Fun", // VRM / VRoid Studio
+  "Fcl_MTH_Joy",
+  "viseme_I", // rough smile-shaped fallback on the Oculus set
+];
+
+// A softer, happier eye shape blended in alongside the smile.
+const EYE_SMILE_TARGETS = ["Fcl_EYE_Joy", "eyeSquintLeft"];
+
 /** Pairs every morphable mesh with the blendshape indices it should drive. */
 function collectMorphTargets(scene) {
   const entries = [];
@@ -46,9 +57,15 @@ function collectMorphTargets(scene) {
     const eyes = BLINK_TARGETS.map((name) => dictionary[name]).filter(
       (index) => index !== undefined,
     );
+    const smile = SMILE_TARGETS.map((name) => dictionary[name]).find(
+      (index) => index !== undefined,
+    );
+    const eyeSmile = EYE_SMILE_TARGETS.map((name) => dictionary[name]).find(
+      (index) => index !== undefined,
+    );
 
-    if (mouth !== undefined || eyes.length)
-      entries.push({ mesh: child, mouth, eyes });
+    if (mouth !== undefined || eyes.length || smile !== undefined)
+      entries.push({ mesh: child, mouth, eyes, smile, eyeSmile });
   });
 
   return entries;
@@ -136,6 +153,9 @@ function collectIdleRig(scene) {
     root: { y: scene.position.y, x: scene.rotation.x, rotY: scene.rotation.y },
     time: 0,
     think: 0,
+    smile: 0,
+    wasGreeting: false,
+    greetNodTime: 0,
     look: {
       yaw: 0,
       pitch: 0,
@@ -187,7 +207,7 @@ function animateArms(arms, time, gesture, breath) {
  * Keeps the avatar alive between sentences: breathing, a slow weight shift, and
  * eyes wandering to a new spot every few seconds rather than staring ahead.
  */
-function animateIdle(state, scene, delta, openness, gesture, thinking) {
+function animateIdle(state, scene, delta, openness, gesture, thinking, greeting) {
   state.time += delta;
 
   const { look } = state;
@@ -196,6 +216,12 @@ function animateIdle(state, scene, delta, openness, gesture, thinking) {
   // Eased rather than switched, so entering and leaving the thinking pose is a
   // movement in itself instead of a jump.
   state.think = THREE.MathUtils.damp(state.think, thinking ? 1 : 0, 3.5, delta);
+  state.smile = THREE.MathUtils.damp(state.smile, greeting ? 1 : 0, 4, delta);
+
+  // Restarts the little nod exactly once, the moment greeting turns on.
+  if (greeting && !state.wasGreeting) state.greetNodTime = 0;
+  state.wasGreeting = greeting;
+  state.greetNodTime += delta;
 
   // Hold a gaze, then pick somewhere new — people glance, they don't sweep.
   if (look.timer >= look.next) {
@@ -239,12 +265,24 @@ function animateIdle(state, scene, delta, openness, gesture, thinking) {
   const { head, neck, spine, hips } = state.bones;
 
   if (head) {
+    // A small nod-and-settle right as greeting starts — the head dips then
+    // rises back once, like a warm hello, rather than looping the whole time.
+    const greetNod =
+      state.smile *
+      Math.exp(-state.greetNodTime * 1.6) *
+      Math.sin(state.greetNodTime * 5);
+
     // Splitting the turn between head and neck avoids the owl look. The tilt
     // is the strongest "considering it" cue, so it only appears while thinking.
     head.bone.rotation.y = head.rest.y + look.yaw * 0.68;
     head.bone.rotation.x =
-      head.rest.x + look.pitch + breath * 0.012 + openness * 0.04;
-    head.bone.rotation.z = head.rest.z + sway * 0.03 + think * THINK_TILT;
+      head.rest.x +
+      look.pitch +
+      breath * 0.012 +
+      openness * 0.04 -
+      greetNod * 0.05;
+    head.bone.rotation.z =
+      head.rest.z + sway * 0.03 + think * THINK_TILT + state.smile * 0.06;
   }
 
   if (neck) {
@@ -395,7 +433,7 @@ function useMouthMotion(analyser) {
   return advance;
 }
 
-function Model({ analyser, url, onRig, onReady, thinking, label }) {
+function Model({ analyser, url, onRig, onReady, thinking, greeting, label }) {
   const { scene } = useGLTF(url);
   const { camera, controls } = useThree();
   const advance = useMouthMotion(analyser);
@@ -471,6 +509,10 @@ function Model({ analyser, url, onRig, onReady, thinking, label }) {
 
       if (entry.mouth !== undefined) influences[entry.mouth] = openness;
       for (const index of entry.eyes) influences[index] = blink;
+
+      const smile = current.idle.smile;
+      if (entry.smile !== undefined) influences[entry.smile] = smile;
+      if (entry.eyeSmile !== undefined) influences[entry.eyeSmile] = smile * 0.7;
     }
 
     animateIdle(
@@ -480,6 +522,7 @@ function Model({ analyser, url, onRig, onReady, thinking, label }) {
       openness,
       gesture,
       thinking,
+      greeting,
     );
   });
 
@@ -607,6 +650,7 @@ export function Avatar({
   analyser,
   className,
   thinking,
+  greeting,
   name = "the avatar",
   onReady,
 }) {
@@ -711,6 +755,7 @@ export function Avatar({
                   onReady?.();
                 }}
                 thinking={thinking}
+                greeting={greeting}
                 label={name}
               />
             </React.Suspense>
