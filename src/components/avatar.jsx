@@ -515,7 +515,7 @@ class ModelBoundary extends React.Component {
  * screen. Downloading reports real bytes; parsing and uploading to the GPU
  * report nothing, so that phase falls back to an indeterminate bar.
  */
-function LoadingOverlay({ percent, phase }) {
+function LoadingOverlay({ percent, phase, name }) {
   const downloading = phase === "downloading";
   return (
     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 px-6">
@@ -537,7 +537,7 @@ function LoadingOverlay({ percent, phase }) {
           aria-valuenow={downloading ? percent : undefined}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label={downloading ? "Downloading avatar" : "Preparing avatar"}
+          aria-label={downloading ? `Loading ${name}` : `${name} is getting ready`}
         >
           {downloading ? (
             <div
@@ -550,7 +550,9 @@ function LoadingOverlay({ percent, phase }) {
         </div>
 
         <p className="mt-2.5 text-center text-xs tabular-nums text-muted-foreground">
-          {downloading ? `Loading avatar — ${percent}%` : "Preparing avatar…"}
+          {downloading
+            ? `Loading ${name} — ${percent}%`
+            : `${name} is getting ready…`}
         </p>
       </div>
     </div>
@@ -561,7 +563,7 @@ function LoadingOverlay({ percent, phase }) {
 // 5 MB file twice in development, and so a remount reuses the parsed blob.
 let cachedModelUrl = null;
 
-export function Avatar({ analyser, className, thinking }) {
+export function Avatar({ analyser, className, thinking, name = "the avatar" }) {
   // Streamed by hand rather than handed straight to the loader: drei's
   // useProgress counts files, so a single model would jump 0 -> 100 with
   // nothing in between. Reading the body gives real bytes.
@@ -684,13 +686,14 @@ export function Avatar({ analyser, className, thinking }) {
         <LoadingOverlay
           percent={model.percent}
           phase={status === "loading" ? "downloading" : "preparing"}
+          name={name}
         />
       )}
 
       {status === "missing" && (
         <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-card/85 py-2 text-center text-xs text-muted-foreground">
           Placeholder shown — add your model at{" "}
-          <code className="font-mono">public/avatar.glb</code>
+          <code className="font-mono">public{MODEL_URL}</code>
         </p>
       )}
 

@@ -22,14 +22,19 @@ const OWNER = {
   role: "Full Stack Developer & Team Lead",
 };
 
+// The assistant is deliberately a separate persona, not Raiyan himself: the
+// avatar is not his likeness, so having it claim to be him reads as a mismatch.
+// Her name stays out of the header — the page is selling Raiyan, not her.
+const ASSISTANT = "Zaira";
+
 // The clearest signal of what a visitor may ask. Phrased the way a recruiter
 // would say it, not as a feature list.
 const PROMPTS = [
-  "What's your background?",
-  "What tech do you work with?",
+  "What's Raiyan's background?",
+  "What tech does he work with?",
   "Tell me about a recent project",
-  "What are you looking for next?",
-  "How can I reach you?",
+  "What is he looking for next?",
+  "How can I reach him?",
 ];
 
 // Neural2 leads, and is therefore the default. Chirp 3 HD sounds better but
@@ -149,6 +154,7 @@ export default function Home() {
         <Avatar
           analyser={analyser}
           thinking={isLoading}
+          name={ASSISTANT}
           className="absolute inset-0"
         />
       </div>
@@ -190,8 +196,9 @@ export default function Home() {
             </div>
           ) : (
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Hi — I&apos;m {OWNER.firstName}&apos;s AI assistant. Ask about his
-              experience, projects or skills and I&apos;ll answer out loud.
+              Hi, I&apos;m {ASSISTANT} — {OWNER.firstName}&apos;s AI assistant.
+              Ask me about his experience, projects or skills and I&apos;ll
+              answer out loud.
             </p>
           )}
 
@@ -240,7 +247,7 @@ export default function Home() {
               onKeyDown={handleKeyDown}
               maxLength={MAX_CHARS}
               rows={2}
-              placeholder={`Ask me anything about ${OWNER.firstName}…`}
+              placeholder={`Ask ${ASSISTANT} about ${OWNER.firstName}…`}
               aria-label={`Ask a question about ${OWNER.name}`}
               className="h-16 min-h-16 resize-none overflow-y-auto pr-12 field-sizing-fixed sm:h-20 sm:min-h-20"
             />
