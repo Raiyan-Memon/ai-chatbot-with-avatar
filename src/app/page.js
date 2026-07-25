@@ -154,7 +154,7 @@ export default function Home() {
       </div>
 
       <aside className="flex min-h-0 min-w-0 flex-col border-t bg-card lg:border-t-0 lg:border-l">
-        <header className="flex items-center gap-3 border-b px-5 py-4 sm:px-6">
+        <header className="flex items-center gap-3 border-b px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
             {OWNER.initials}
           </div>
@@ -173,7 +173,7 @@ export default function Home() {
         </header>
 
         {/* Scrolls independently. This is where answers will go. */}
-        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-5 sm:px-6">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 sm:gap-5 sm:px-6 sm:py-5">
           {lastAsked ? (
             <div className="flex flex-col gap-3">
               <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-3.5 py-2.5 text-sm text-background">
@@ -197,26 +197,31 @@ export default function Home() {
 
           {/* Kept on screen after asking: without a conversation history there
               is nothing else to come back to, so these stay the way forward. */}
-          <div className="flex flex-col items-start gap-2">
+          <div className="flex flex-col gap-2">
             <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
               Try asking
             </p>
-            {PROMPTS.map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                onClick={() => askPrompt(prompt)}
-                className="rounded-full border border-border bg-background px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                {prompt}
-              </button>
-            ))}
+
+            {/* Wrapped rather than stacked — five chips in a column was the
+                single biggest waste of height on a phone. */}
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
+              {PROMPTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => askPrompt(prompt)}
+                  className="rounded-full border border-border bg-background px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         <form
           onSubmit={handleSubmit}
-          className="flex flex-col gap-3 border-t px-5 py-4 sm:px-6"
+          className="flex flex-col gap-2 border-t px-4 py-3 sm:gap-3 sm:px-6 sm:py-4"
         >
           {error && (
             <p
@@ -237,7 +242,7 @@ export default function Home() {
               rows={2}
               placeholder={`Ask me anything about ${OWNER.firstName}…`}
               aria-label={`Ask a question about ${OWNER.name}`}
-              className="h-20 min-h-20 resize-none overflow-y-auto pr-12 field-sizing-fixed"
+              className="h-16 min-h-16 resize-none overflow-y-auto pr-12 field-sizing-fixed sm:h-20 sm:min-h-20"
             />
 
             <Button
@@ -255,7 +260,10 @@ export default function Home() {
             </Button>
           </div>
 
-          <div className="flex items-center justify-between gap-3">
+          {/* The whole row disappears while one voice is enabled — a dropdown
+              with a single choice is clutter. Uncomment entries in VOICES and
+              it comes back on its own. */}
+          {VOICES.length > 1 && (
             <Select
               items={VOICES}
               value={voice}
@@ -276,11 +284,7 @@ export default function Home() {
                 ))}
               </SelectContent>
             </Select>
-
-            <p className="shrink-0 text-[11px] text-muted-foreground">
-              Enter to send
-            </p>
-          </div>
+          )}
 
           {/* Always mounted and hidden: the Web Audio graph binds to this node. */}
           <audio
