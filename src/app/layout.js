@@ -25,6 +25,10 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      {/* Starts the model download alongside the HTML instead of waiting for
+          React to hydrate and run the fetch. */}
+      <link rel="preload" href="/avatar-optimized.glb" as="fetch" />
+
       <body className="h-full overflow-hidden flex flex-col">{children}</body>
     </html>
   );

@@ -5,9 +5,11 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
-// A .vrm is a GLB with VRM extensions, so GLTFLoader reads it directly — the
-// extension in the filename makes no difference.
-export const MODEL_URL = "/avatar.vrm";
+// Built from avatar.vrm by scripts/optimize-model.sh: textures downsized to
+// 1024 and re-encoded as WebP, unreferenced data pruned. 15.8 MB -> 5.0 MB.
+// The VRM extensions are dropped in the process, which costs nothing here
+// since GLTFLoader never read them — keep avatar.vrm as the source.
+export const MODEL_URL = "/avatar-optimized.glb";
 
 // Every generator names its blendshapes differently — ARKit, the Oculus viseme
 // set, or VRM's Japanese-derived scheme. Take the first one the model has, most
