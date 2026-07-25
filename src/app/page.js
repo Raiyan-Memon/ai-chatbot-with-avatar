@@ -19,7 +19,7 @@ const OWNER = {
   name: "Raiyan Memon",
   firstName: "Raiyan",
   initials: "RM",
-  role: "Software Engineer",
+  role: "Full Stack Developer & Team Lead",
 };
 
 // The clearest signal of what a visitor may ask. Phrased the way a recruiter
@@ -50,6 +50,7 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
   const [lastAsked, setLastAsked] = useState(null);
+  const [answer, setAnswer] = useState(null);
   const audioRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -76,6 +77,7 @@ export default function Home() {
     setIsLoading(true);
     setError(null);
     setLastAsked(value);
+    setAnswer(null);
     // Cleared on send, as every chat does — the question is echoed in the
     // panel above, so nothing is lost.
     setText("");
@@ -83,24 +85,39 @@ export default function Home() {
     // The AudioContext starts suspended; this click is the gesture that frees it.
     await resume();
 
+    let reply = null;
+
     try {
-      const response = await fetch("/api/tts", {
+      const chat = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: value, voice }),
+        body: JSON.stringify({ question: value }),
       });
 
-      if (!response.ok) {
-        const details = await response.json().catch(() => null);
+      const result = await chat.json().catch(() => null);
+      if (!chat.ok) throw new Error(result?.error ?? "Could not get an answer");
+
+      reply = result.answer;
+      // Shown before the audio is ready: reading should never wait on speech.
+      setAnswer(reply);
+
+      const speech = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: reply, voice }),
+      });
+
+      if (!speech.ok) {
+        const details = await speech.json().catch(() => null);
         throw new Error(details?.error ?? "Could not generate the audio");
       }
 
-      setAudioUrl(URL.createObjectURL(await response.blob()));
+      setAudioUrl(URL.createObjectURL(await speech.blob()));
     } catch (err) {
       setError(err.message);
-      // Put the question back so a failed request can just be re-sent, rather
-      // than the visitor having to retype it.
-      setText(value);
+      // Only worth restoring if nothing came back — once there is an answer on
+      // screen, refilling the box would just look like the question failed.
+      if (!reply) setText(value);
     } finally {
       setIsLoading(false);
     }
@@ -151,13 +168,18 @@ export default function Home() {
         {/* Scrolls independently. This is where answers will go. */}
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-5 sm:px-6">
           {lastAsked ? (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3">
               <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-3.5 py-2.5 text-sm text-background">
                 {lastAsked}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {isLoading ? "Thinking…" : "Speaking the reply aloud."}
-              </p>
+
+              {answer ? (
+                <div className="max-w-[92%] rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm leading-relaxed">
+                  {answer}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">Thinking…</p>
+              )}
             </div>
           ) : (
             <p className="text-sm leading-relaxed text-muted-foreground">

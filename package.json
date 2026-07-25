@@ -27,6 +27,7 @@
     "@tailwindcss/postcss": "^4",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
+    "pdfjs-dist": "^6.1.200",
     "tailwindcss": "^4"
   }
 }
