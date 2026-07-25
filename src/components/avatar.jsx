@@ -468,26 +468,104 @@ class ModelBoundary extends React.Component {
   }
 }
 
+/** Shimmering stand-in shown while the model streams in. */
+function LoadingOverlay({ percent }) {
+  return (
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 px-6">
+      {/* Sized in vmin so the silhouette scales with the viewport, clamped so
+          it stays sensible on both phones and large screens. */}
+      <div className="relative w-[34vmin] max-w-52 min-w-32 overflow-hidden rounded-2xl">
+        <div className="flex flex-col items-center gap-[6%]">
+          <div className="aspect-square w-[46%] rounded-full bg-foreground/10" />
+          <div className="h-[14vmin] max-h-24 min-h-14 w-full rounded-t-[42%] bg-foreground/10" />
+        </div>
+
+        <div className="absolute inset-0 -translate-x-full animate-shimmer bg-linear-to-r from-transparent via-foreground/15 to-transparent" />
+      </div>
+
+      <div className="w-full max-w-52 min-w-32">
+        <div
+          className="h-1 overflow-hidden rounded-full bg-foreground/10"
+          role="progressbar"
+          aria-valuenow={percent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Loading avatar"
+        >
+          <div
+            className="h-full rounded-full bg-foreground/50 transition-[width] duration-200 ease-out"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+
+        <p className="mt-2.5 text-center text-xs tabular-nums text-muted-foreground">
+          Loading avatar — {percent}%
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function Avatar({ analyser, className }) {
-  // Checked up front so a missing model shows the placeholder quietly, rather
-  // than throwing to the boundary and tripping the dev error overlay.
-  const [status, setStatus] = React.useState("checking");
+  // Streamed by hand rather than handed straight to the loader: drei's
+  // useProgress counts files, so a single model would jump 0 -> 100 with
+  // nothing in between. Reading the body gives real bytes.
+  const [model, setModel] = React.useState({
+    status: "loading",
+    url: null,
+    percent: 0,
+  });
   const [riggedForSpeech, setRiggedForSpeech] = React.useState(true);
 
   React.useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
+    let objectUrl = null;
 
-    fetch(MODEL_URL, { method: "HEAD" })
-      .then(
-        (response) => active && setStatus(response.ok ? "ready" : "missing"),
-      )
-      .catch(() => active && setStatus("missing"));
+    async function load() {
+      try {
+        const response = await fetch(MODEL_URL, { signal: controller.signal });
+        if (!response.ok) throw new Error(String(response.status));
+
+        const total = Number(response.headers.get("content-length")) || 0;
+        const reader = response.body.getReader();
+        const chunks = [];
+        let received = 0;
+
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          chunks.push(value);
+          received += value.length;
+
+          // Without a Content-Length there is nothing to divide by, so hold at
+          // 0 and let the shimmer carry it.
+          if (total) {
+            setModel((current) => ({
+              ...current,
+              percent: Math.min(100, Math.round((received / total) * 100)),
+            }));
+          }
+        }
+
+        objectUrl = URL.createObjectURL(new Blob(chunks));
+        setModel({ status: "ready", url: objectUrl, percent: 100 });
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          setModel({ status: "missing", url: null, percent: 0 });
+        }
+      }
+    }
+
+    load();
 
     return () => {
-      active = false;
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, []);
 
+  const status = model.status;
   const placeholder = <PlaceholderHead analyser={analyser} />;
 
   return (
@@ -510,18 +588,20 @@ export function Avatar({ analyser, className }) {
         {status === "ready" ? (
           <ModelBoundary
             fallback={placeholder}
-            onFailure={() => setStatus("missing")}
+            onFailure={() =>
+              setModel((current) => ({ ...current, status: "missing" }))
+            }
           >
-            <React.Suspense fallback={placeholder}>
+            <React.Suspense fallback={null}>
               <Model
                 analyser={analyser}
-                url={MODEL_URL}
+                url={model.url}
                 onRig={setRiggedForSpeech}
               />
             </React.Suspense>
           </ModelBoundary>
         ) : (
-          placeholder
+          status === "missing" && placeholder
         )}
 
         <OrbitControls
@@ -531,6 +611,8 @@ export function Avatar({ analyser, className }) {
           maxDistance={6}
         />
       </Canvas>
+
+      {status === "loading" && <LoadingOverlay percent={model.percent} />}
 
       {status === "missing" && (
         <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-card/85 py-2 text-center text-xs text-muted-foreground">

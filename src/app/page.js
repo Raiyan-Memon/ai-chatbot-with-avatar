@@ -89,7 +89,7 @@ export default function Home() {
   // A grid with an explicit 1fr row, not flex: the stage needs a definite
   // height for R3F to measure, and flex-basis alone leaves it short.
   return (
-    <div className="grid h-dvh grid-rows-[1fr_auto] overflow-hidden">
+    <div className="grid h-dvh grid-cols-1 grid-rows-[1fr_auto] overflow-hidden">
       {/* Stage: everything left over after the controls claim their height. */}
       <div className="relative min-h-0 overflow-hidden bg-linear-to-b from-muted/20 to-muted/60">
         <Avatar analyser={analyser} className="absolute inset-0" />
@@ -136,7 +136,12 @@ export default function Home() {
               value={voice}
               onValueChange={(next) => setVoice(next)}
             >
-              <SelectTrigger aria-label="Voice" className="h-9 flex-1">
+              {/* min-w-0 and w-auto beat the component's own w-fit, which
+                  otherwise stops the row shrinking on narrow screens. */}
+              <SelectTrigger
+                aria-label="Voice"
+                className="h-9 w-auto min-w-0 flex-1"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
