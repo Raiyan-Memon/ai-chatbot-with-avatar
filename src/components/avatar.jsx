@@ -65,6 +65,11 @@ const ELBOW_BEND = 0.22;
 // Shot composition, in metres of the model to keep in view. Height is the
 // portrait crop; width stops a narrow panel slicing the head. Drop shifts the
 // aim below the head bone — raise it to include more chest.
+// The thinking pose: gaze up and to one side, with a slight head tilt.
+const THINK_YAW = 0.3;
+const THINK_PITCH = -0.13;
+const THINK_TILT = 0.1;
+
 const FRAME_HEIGHT = 0.4;
 const FRAME_WIDTH = 0.34;
 const FRAME_DROP = 0.01;
@@ -126,6 +131,7 @@ function collectIdleRig(scene) {
     arms,
     root: { y: scene.position.y, x: scene.rotation.x, rotY: scene.rotation.y },
     time: 0,
+    think: 0,
     look: {
       yaw: 0,
       pitch: 0,
@@ -177,11 +183,15 @@ function animateArms(arms, time, gesture, breath) {
  * Keeps the avatar alive between sentences: breathing, a slow weight shift, and
  * eyes wandering to a new spot every few seconds rather than staring ahead.
  */
-function animateIdle(state, scene, delta, openness, gesture) {
+function animateIdle(state, scene, delta, openness, gesture, thinking) {
   state.time += delta;
 
   const { look } = state;
   look.timer += delta;
+
+  // Eased rather than switched, so entering and leaving the thinking pose is a
+  // movement in itself instead of a jump.
+  state.think = THREE.MathUtils.damp(state.think, thinking ? 1 : 0, 3.5, delta);
 
   // Hold a gaze, then pick somewhere new — people glance, they don't sweep.
   if (look.timer >= look.next) {
@@ -195,16 +205,23 @@ function animateIdle(state, scene, delta, openness, gesture) {
   // centre as the speech envelope rises, so the head settles to front rather
   // than snapping there, and glances resume once it goes quiet again.
   const wander = 1 - THREE.MathUtils.clamp(gesture * 1.4, 0, 1);
+  const think = state.think;
+
+  // While composing an answer the gaze settles up and to one side and drifts
+  // slowly, the way people look away to think — the alternative is standing
+  // perfectly still, which reads as the app having hung.
+  const driftY = Math.sin(state.time * 0.9) * 0.06;
+  const driftX = Math.sin(state.time * 0.7 + 1.3) * 0.04;
 
   look.yaw = THREE.MathUtils.damp(
     look.yaw,
-    look.targetYaw * wander,
+    THREE.MathUtils.lerp(look.targetYaw * wander, THINK_YAW + driftY, think),
     2.4,
     delta,
   );
   look.pitch = THREE.MathUtils.damp(
     look.pitch,
-    look.targetPitch * wander,
+    THREE.MathUtils.lerp(look.targetPitch * wander, THINK_PITCH + driftX, think),
     2.4,
     delta,
   );
@@ -214,11 +231,12 @@ function animateIdle(state, scene, delta, openness, gesture) {
   const { head, neck, spine, hips } = state.bones;
 
   if (head) {
-    // Splitting the turn between head and neck avoids the owl look.
+    // Splitting the turn between head and neck avoids the owl look. The tilt
+    // is the strongest "considering it" cue, so it only appears while thinking.
     head.bone.rotation.y = head.rest.y + look.yaw * 0.68;
     head.bone.rotation.x =
       head.rest.x + look.pitch + breath * 0.012 + openness * 0.04;
-    head.bone.rotation.z = head.rest.z + sway * 0.03;
+    head.bone.rotation.z = head.rest.z + sway * 0.03 + think * THINK_TILT;
   }
 
   if (neck) {
@@ -369,7 +387,7 @@ function useMouthMotion(analyser) {
   return advance;
 }
 
-function Model({ analyser, url, onRig, onReady }) {
+function Model({ analyser, url, onRig, onReady, thinking }) {
   const { scene } = useGLTF(url);
   const { camera, controls } = useThree();
   const advance = useMouthMotion(analyser);
@@ -438,7 +456,7 @@ function Model({ analyser, url, onRig, onReady }) {
       for (const index of entry.eyes) influences[index] = blink;
     }
 
-    animateIdle(current.idle, current.scene, delta, openness, gesture);
+    animateIdle(current.idle, current.scene, delta, openness, gesture, thinking);
   });
 
   return <primitive object={scene} />;
@@ -543,7 +561,7 @@ function LoadingOverlay({ percent, phase }) {
 // 5 MB file twice in development, and so a remount reuses the parsed blob.
 let cachedModelUrl = null;
 
-export function Avatar({ analyser, className }) {
+export function Avatar({ analyser, className, thinking }) {
   // Streamed by hand rather than handed straight to the loader: drei's
   // useProgress counts files, so a single model would jump 0 -> 100 with
   // nothing in between. Reading the body gives real bytes.
@@ -641,6 +659,7 @@ export function Avatar({ analyser, className }) {
                 url={model.url}
                 onRig={setRiggedForSpeech}
                 onReady={() => setOnScreen(true)}
+                thinking={thinking}
               />
             </React.Suspense>
           </ModelBoundary>

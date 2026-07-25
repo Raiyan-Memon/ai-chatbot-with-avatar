@@ -32,13 +32,16 @@ const PROMPTS = [
   "How can I reach you?",
 ];
 
+// Neural2 leads, and is therefore the default. Chirp 3 HD sounds better but
+// measured ~4.2s to synthesise a typical answer against ~1.2s for Neural2, and
+// three extra seconds of silence costs more than the extra polish buys.
 const VOICES = [
-  { value: "en-US-Chirp3-HD-Aoede", label: "Aoede — warm female" },
-  { value: "en-US-Chirp3-HD-Puck", label: "Puck — bright male" },
-  { value: "en-US-Chirp3-HD-Charon", label: "Charon — deep male" },
-  { value: "en-US-Chirp3-HD-Kore", label: "Kore — crisp female" },
-  { value: "en-US-Neural2-F", label: "Neural2 F — female" },
-  { value: "en-US-Neural2-D", label: "Neural2 D — male" },
+  // { value: "en-US-Neural2-F", label: "Neural2 F — female" },
+  // { value: "en-US-Neural2-D", label: "Neural2 D — male" },
+  { value: "en-US-Neural2-C", label: "Neural2 C — female" },
+  // { value: "en-US-Chirp3-HD-Aoede", label: "Aoede — warm female (slower)" },
+  // { value: "en-US-Chirp3-HD-Puck", label: "Puck — bright male (slower)" },
+  // { value: "en-US-Chirp3-HD-Charon", label: "Charon — deep male (slower)" },
 ];
 
 const MAX_CHARS = 5000;
@@ -143,7 +146,11 @@ export default function Home() {
     // on phones.
     <div className="grid h-dvh min-w-0 grid-rows-[38vh_1fr] overflow-hidden lg:grid-cols-[1fr_27rem] lg:grid-rows-1">
       <div className="relative min-h-0 min-w-0 overflow-hidden bg-linear-to-b from-muted/30 to-muted/70">
-        <Avatar analyser={analyser} className="absolute inset-0" />
+        <Avatar
+          analyser={analyser}
+          thinking={isLoading}
+          className="absolute inset-0"
+        />
       </div>
 
       <aside className="flex min-h-0 min-w-0 flex-col border-t bg-card lg:border-t-0 lg:border-l">
@@ -276,7 +283,11 @@ export default function Home() {
           </div>
 
           {/* Always mounted and hidden: the Web Audio graph binds to this node. */}
-          <audio ref={audioRef} src={audioUrl ?? undefined} className="hidden" />
+          <audio
+            ref={audioRef}
+            src={audioUrl ?? undefined}
+            className="hidden"
+          />
         </form>
       </aside>
     </div>
