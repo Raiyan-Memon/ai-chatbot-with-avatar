@@ -355,7 +355,7 @@ function useMouthMotion(analyser) {
   return advance;
 }
 
-function Model({ analyser, url, onRig }) {
+function Model({ analyser, url, onRig, onReady }) {
   const { scene } = useGLTF(url);
   const { camera, controls } = useThree();
   const advance = useMouthMotion(analyser);
@@ -396,6 +396,14 @@ function Model({ analyser, url, onRig }) {
     // Deliberately not an effect: OrbitControls mounts on its own schedule and
     // resets its target to the origin, so framing has to happen once controls
     // genuinely exist — otherwise it gets silently undone.
+    // Announced from the frame loop rather than an effect, since this is the
+    // point the model is genuinely being drawn. Deliberately not tied to the
+    // framing below: if controls never mounted, the overlay would hang forever.
+    if (!current.shown) {
+      current.shown = true;
+      onReady?.();
+    }
+
     if (!current.framed && controls) {
       current.focus = frameOn(scene, camera, controls);
       current.framed = true;
@@ -470,8 +478,13 @@ class ModelBoundary extends React.Component {
   }
 }
 
-/** Shimmering stand-in shown while the model streams in. */
-function LoadingOverlay({ percent }) {
+/**
+ * Shimmering stand-in, shown from first paint until the model is actually on
+ * screen. Downloading reports real bytes; parsing and uploading to the GPU
+ * report nothing, so that phase falls back to an indeterminate bar.
+ */
+function LoadingOverlay({ percent, phase }) {
+  const downloading = phase === "downloading";
   return (
     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 px-6">
       {/* Sized in vmin so the silhouette scales with the viewport, clamped so
@@ -489,39 +502,53 @@ function LoadingOverlay({ percent }) {
         <div
           className="h-1 overflow-hidden rounded-full bg-foreground/10"
           role="progressbar"
-          aria-valuenow={percent}
+          aria-valuenow={downloading ? percent : undefined}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label="Loading avatar"
+          aria-label={downloading ? "Downloading avatar" : "Preparing avatar"}
         >
-          <div
-            className="h-full rounded-full bg-foreground/50 transition-[width] duration-200 ease-out"
-            style={{ width: `${percent}%` }}
-          />
+          {downloading ? (
+            <div
+              className="h-full rounded-full bg-foreground/50 transition-[width] duration-200 ease-out"
+              style={{ width: `${percent}%` }}
+            />
+          ) : (
+            <div className="h-full w-1/4 animate-indeterminate rounded-full bg-foreground/50" />
+          )}
         </div>
 
         <p className="mt-2.5 text-center text-xs tabular-nums text-muted-foreground">
-          Loading avatar — {percent}%
+          {downloading ? `Loading avatar — ${percent}%` : "Preparing avatar…"}
         </p>
       </div>
     </div>
   );
 }
 
+// Cached across mounts so Strict Mode's double-invoked effect doesn't pull the
+// 5 MB file twice in development, and so a remount reuses the parsed blob.
+let cachedModelUrl = null;
+
 export function Avatar({ analyser, className }) {
   // Streamed by hand rather than handed straight to the loader: drei's
   // useProgress counts files, so a single model would jump 0 -> 100 with
   // nothing in between. Reading the body gives real bytes.
-  const [model, setModel] = React.useState({
-    status: "loading",
-    url: null,
-    percent: 0,
-  });
+  const [model, setModel] = React.useState(() =>
+    cachedModelUrl
+      ? { status: "ready", url: cachedModelUrl, percent: 100 }
+      : { status: "loading", url: null, percent: 0 },
+  );
   const [riggedForSpeech, setRiggedForSpeech] = React.useState(true);
 
+  // Downloading is only half the wait — parsing the file and uploading it to
+  // the GPU takes a while too, so the overlay stays up until the model has
+  // actually been drawn.
+  const [onScreen, setOnScreen] = React.useState(false);
+
   React.useEffect(() => {
+    if (cachedModelUrl) return;
+
     const controller = new AbortController();
-    let objectUrl = null;
 
     async function load() {
       try {
@@ -550,8 +577,8 @@ export function Avatar({ analyser, className }) {
           }
         }
 
-        objectUrl = URL.createObjectURL(new Blob(chunks));
-        setModel({ status: "ready", url: objectUrl, percent: 100 });
+        cachedModelUrl = URL.createObjectURL(new Blob(chunks));
+        setModel({ status: "ready", url: cachedModelUrl, percent: 100 });
       } catch (error) {
         if (error.name !== "AbortError") {
           setModel({ status: "missing", url: null, percent: 0 });
@@ -561,10 +588,10 @@ export function Avatar({ analyser, className }) {
 
     load();
 
-    return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    // The blob is deliberately never revoked. Revoking on unmount races both
+    // Strict Mode's double-invoked effect and useGLTF's own async read, and a
+    // revoked URL fails to load with no error worth catching.
+    return () => controller.abort();
   }, []);
 
   const status = model.status;
@@ -599,6 +626,7 @@ export function Avatar({ analyser, className }) {
                 analyser={analyser}
                 url={model.url}
                 onRig={setRiggedForSpeech}
+                onReady={() => setOnScreen(true)}
               />
             </React.Suspense>
           </ModelBoundary>
@@ -614,7 +642,12 @@ export function Avatar({ analyser, className }) {
         />
       </Canvas>
 
-      {status === "loading" && <LoadingOverlay percent={model.percent} />}
+      {status !== "missing" && !onScreen && (
+        <LoadingOverlay
+          percent={model.percent}
+          phase={status === "loading" ? "downloading" : "preparing"}
+        />
+      )}
 
       {status === "missing" && (
         <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-card/85 py-2 text-center text-xs text-muted-foreground">

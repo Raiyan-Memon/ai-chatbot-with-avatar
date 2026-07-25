@@ -6,6 +6,7 @@
 
 @theme {
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-indeterminate: indeterminate 1.15s ease-in-out infinite;
 
   @keyframes shimmer {
     from {
@@ -13,6 +14,17 @@
     }
     to {
       transform: translateX(100%);
+    }
+  }
+
+  /* Travels further than its own width so a partial-width bar sweeps the
+     whole track — used when there is no progress figure to show. */
+  @keyframes indeterminate {
+    from {
+      transform: translateX(-110%);
+    }
+    to {
+      transform: translateX(420%);
     }
   }
 }
