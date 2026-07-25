@@ -225,7 +225,11 @@ function animateIdle(state, scene, delta, openness, gesture, thinking) {
   );
   look.pitch = THREE.MathUtils.damp(
     look.pitch,
-    THREE.MathUtils.lerp(look.targetPitch * wander, THINK_PITCH + driftX, think),
+    THREE.MathUtils.lerp(
+      look.targetPitch * wander,
+      THINK_PITCH + driftX,
+      think,
+    ),
     2.4,
     delta,
   );
@@ -469,7 +473,14 @@ function Model({ analyser, url, onRig, onReady, thinking, label }) {
       for (const index of entry.eyes) influences[index] = blink;
     }
 
-    animateIdle(current.idle, current.scene, delta, openness, gesture, thinking);
+    animateIdle(
+      current.idle,
+      current.scene,
+      delta,
+      openness,
+      gesture,
+      thinking,
+    );
   });
 
   return (
@@ -564,7 +575,9 @@ function LoadingOverlay({ percent, phase, name }) {
           aria-valuenow={downloading ? percent : undefined}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label={downloading ? `Loading ${name}` : `${name} is getting ready`}
+          aria-label={
+            downloading ? `Loading ${name}` : `${name} is getting ready`
+          }
         >
           {downloading ? (
             <div
@@ -590,7 +603,13 @@ function LoadingOverlay({ percent, phase, name }) {
 // 5 MB file twice in development, and so a remount reuses the parsed blob.
 let cachedModelUrl = null;
 
-export function Avatar({ analyser, className, thinking, name = "the avatar" }) {
+export function Avatar({
+  analyser,
+  className,
+  thinking,
+  name = "the avatar",
+  onReady,
+}) {
   // Streamed by hand rather than handed straight to the loader: drei's
   // useProgress counts files, so a single model would jump 0 -> 100 with
   // nothing in between. Reading the body gives real bytes.
@@ -687,7 +706,10 @@ export function Avatar({ analyser, className, thinking, name = "the avatar" }) {
                 analyser={analyser}
                 url={model.url}
                 onRig={setRiggedForSpeech}
-                onReady={() => setOnScreen(true)}
+                onReady={() => {
+                  setOnScreen(true);
+                  onReady?.();
+                }}
                 thinking={thinking}
                 label={name}
               />

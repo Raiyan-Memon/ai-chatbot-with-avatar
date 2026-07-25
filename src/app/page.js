@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAudioAnalyser } from "@/hooks/use-audio-analyser";
+import { GREETING_AUDIO, GREETING_TEXT, PRIVACY_TEXT } from "@/lib/greeting";
 
 const OWNER = {
   name: "Raiyan Memon",
@@ -59,22 +60,123 @@ export default function Home() {
   const [audioUrl, setAudioUrl] = useState(null);
   const [lastAsked, setLastAsked] = useState(null);
   const [answer, setAnswer] = useState(null);
+  const [avatarReady, setAvatarReady] = useState(false);
+  const [greetingBlocked, setGreetingBlocked] = useState(false);
+  const [greetingAttempted, setGreetingAttempted] = useState(false);
+  const [interacted, setInteracted] = useState(false);
   const audioRef = useRef(null);
+  const greetingAudioRef = useRef(null);
+  const speechBlobUrlRef = useRef(null);
   const inputRef = useRef(null);
+
+  function resetPage() {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+
+    if (greetingAudioRef.current) {
+      greetingAudioRef.current.pause();
+      greetingAudioRef.current.currentTime = 0;
+    }
+
+    if (speechBlobUrlRef.current) {
+      URL.revokeObjectURL(speechBlobUrlRef.current);
+      speechBlobUrlRef.current = null;
+    }
+
+    setText("");
+    setIsLoading(false);
+    setError(null);
+    setAudioUrl(null);
+    setLastAsked(null);
+    setAnswer(null);
+    setGreetingBlocked(false);
+    setGreetingAttempted(false);
+    setInteracted(false);
+  }
 
   const { analyser, resume } = useAudioAnalyser(audioRef);
 
   // Release the previous blob when a new one replaces it, and on unmount.
   useEffect(() => {
     return () => {
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      if (speechBlobUrlRef.current)
+        URL.revokeObjectURL(speechBlobUrlRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    if (!avatarReady || interacted || greetingAttempted) return;
+
+    const audio = greetingAudioRef.current;
+    if (!audio) return;
+
+    const timer = window.setTimeout(() => {
+      audio.muted = true;
+      audio.currentTime = 0;
+
+      audio
+        .play()
+        .then(() => {
+          audio.muted = false;
+          setGreetingBlocked(false);
+        })
+        .catch(() => setGreetingBlocked(true))
+        .finally(() => setGreetingAttempted(true));
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [avatarReady, interacted, greetingAttempted]);
+
+  useEffect(() => {
+    if (!audioUrl) return;
+
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    audio.play().catch(() => {
+      // This is the response audio; if playback fails it should not
+      // affect the greeting blocked UI.
+    });
   }, [audioUrl]);
 
-  // Play as soon as fresh audio arrives. Allowed, since this follows a click.
   useEffect(() => {
-    if (audioUrl) audioRef.current?.play().catch(() => {});
-  }, [audioUrl]);
+    if (!avatarReady || interacted || !greetingBlocked) return;
+
+    const audio = greetingAudioRef.current;
+    if (!audio) return;
+
+    const retry = () => {
+      if (interacted) return;
+
+      audio.muted = true;
+      audio.currentTime = 0;
+
+      audio
+        .play()
+        .then(() => {
+          audio.muted = false;
+          setGreetingBlocked(false);
+        })
+        .catch(() => {
+          setGreetingAttempted(true);
+        });
+    };
+
+    const handleFocus = () => retry();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") retry();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [avatarReady, interacted, greetingBlocked]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -82,15 +184,17 @@ export default function Home() {
     const value = text.trim();
     if (!value || isLoading) return;
 
+    setInteracted(true);
+    if (greetingAudioRef.current) {
+      greetingAudioRef.current.pause();
+      greetingAudioRef.current.currentTime = 0;
+    }
     setIsLoading(true);
     setError(null);
     setLastAsked(value);
     setAnswer(null);
-    // Cleared on send, as every chat does — the question is echoed in the
-    // panel above, so nothing is lost.
     setText("");
 
-    // The AudioContext starts suspended; this click is the gesture that frees it.
     await resume();
 
     let reply = null;
@@ -120,7 +224,13 @@ export default function Home() {
         throw new Error(details?.error ?? "Could not generate the audio");
       }
 
-      setAudioUrl(URL.createObjectURL(await speech.blob()));
+      const blob = await speech.blob();
+      if (speechBlobUrlRef.current) {
+        URL.revokeObjectURL(speechBlobUrlRef.current);
+      }
+      const objectUrl = URL.createObjectURL(blob);
+      speechBlobUrlRef.current = objectUrl;
+      setAudioUrl(objectUrl);
     } catch (err) {
       setError(err.message);
       // Only worth restoring if nothing came back — once there is an answer on
@@ -141,8 +251,24 @@ export default function Home() {
   }
 
   function askPrompt(prompt) {
+    setInteracted(true);
+    if (greetingAudioRef.current) {
+      greetingAudioRef.current.pause();
+      greetingAudioRef.current.currentTime = 0;
+    }
     setText(prompt);
     inputRef.current?.focus();
+  }
+
+  async function playGreeting() {
+    setInteracted(true);
+    const audio = greetingAudioRef.current;
+    if (!audio) return;
+
+    audio
+      .play()
+      .then(() => setGreetingBlocked(false))
+      .catch(() => setGreetingBlocked(true));
   }
 
   return (
@@ -155,26 +281,35 @@ export default function Home() {
           analyser={analyser}
           thinking={isLoading}
           name={ASSISTANT}
+          onReady={() => setAvatarReady(true)}
           className="absolute inset-0"
         />
       </div>
 
       <aside className="flex min-h-0 min-w-0 flex-col border-t bg-card lg:border-t-0 lg:border-l">
         <header className="flex items-center gap-3 border-b px-4 py-3 sm:px-6 sm:py-4">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
-            {OWNER.initials}
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
+              {OWNER.initials}
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="truncate text-base font-semibold">{OWNER.name}</h1>
+                <span className="shrink-0 rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                  AI
+                </span>
+              </div>
+              <p className="truncate text-xs text-muted-foreground">
+                {OWNER.role}
+              </p>
+            </div>
           </div>
 
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate text-base font-semibold">{OWNER.name}</h1>
-              <span className="shrink-0 rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                AI
-              </span>
-            </div>
-            <p className="truncate text-xs text-muted-foreground">
-              {OWNER.role}
-            </p>
+          <div className="ml-auto">
+            <Button type="button" variant="outline" size="sm" onClick={resetPage}>
+              Reset
+            </Button>
           </div>
         </header>
 
@@ -223,6 +358,26 @@ export default function Home() {
                 </button>
               ))}
             </div>
+
+            {!interacted && (
+              <div className="flex flex-col gap-2 rounded-2xl border border-border bg-background p-3 text-sm text-muted-foreground">
+                <p>{GREETING_TEXT}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" onClick={playGreeting} size="sm">
+                    Play greeting
+                  </Button>
+                  {greetingBlocked && (
+                    <p className="text-xs text-muted-foreground">
+                      If you don&apos;t hear audio, your tab may be muted or the
+                      browser blocked autoplay. Click the button again to try
+                      it.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <p className="text-[11px] text-muted-foreground">{PRIVACY_TEXT}</p>
           </div>
         </div>
 
@@ -297,6 +452,13 @@ export default function Home() {
           <audio
             ref={audioRef}
             src={audioUrl ?? undefined}
+            playsInline
+            className="hidden"
+          />
+          <audio
+            ref={greetingAudioRef}
+            src={GREETING_AUDIO}
+            preload="auto"
             className="hidden"
           />
         </form>

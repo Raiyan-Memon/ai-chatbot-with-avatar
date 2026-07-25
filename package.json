@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "generate:greeting": "node scripts/generate-greeting-audio.mjs",
     "start": "next start",
     "lint": "eslint"
   },
