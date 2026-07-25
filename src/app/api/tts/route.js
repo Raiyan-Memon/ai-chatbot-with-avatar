@@ -1,9 +1,28 @@
+import { clientIp, rateLimit } from "@/lib/rate-limit";
+
 const SYNTHESIZE_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
 
 // Google rejects input longer than 5000 bytes.
 const MAX_CHARS = 5000;
 
+// Same window as /api/chat: normally one TTS call follows one chat call, but
+// this route is reachable on its own, so it needs its own guard against being
+// hit directly and running up the Google Cloud bill.
+const RATE_LIMIT = { limit: 20, windowMs: 15 * 60 * 1000 };
+
 export async function POST(request) {
+  const { allowed, retryAfterSeconds } = rateLimit(
+    `tts:${clientIp(request)}`,
+    RATE_LIMIT,
+  );
+
+  if (!allowed) {
+    return Response.json(
+      { error: "Too many requests — please wait a moment and try again." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } },
+    );
+  }
+
   const apiKey = process.env.GOOGLE_TEXT_TO_SPEECH_API_KEY;
 
   if (!apiKey) {

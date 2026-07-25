@@ -1,4 +1,5 @@
 import { RESUME } from "@/lib/resume";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = "llama-3.1-8b-instant";
@@ -7,6 +8,10 @@ const MODEL = "llama-3.1-8b-instant";
 // token here becomes audio the visitor has to sit through.
 const MAX_TOKENS = 320;
 const MAX_QUESTION = 500;
+
+// Generous enough for a real conversation (the suggested prompts alone are 5
+// questions) but bounded enough that a script can't run up the Groq bill.
+const RATE_LIMIT = { limit: 20, windowMs: 15 * 60 * 1000 };
 
 const SYSTEM_PROMPT = `You are Zaira, the AI assistant on Raiyan Memon's personal site. Visitors are mostly recruiters and hiring managers.
 
@@ -28,6 +33,18 @@ RESUME:
 ${RESUME}`;
 
 export async function POST(request) {
+  const { allowed, retryAfterSeconds } = rateLimit(
+    `chat:${clientIp(request)}`,
+    RATE_LIMIT,
+  );
+
+  if (!allowed) {
+    return Response.json(
+      { error: "Too many questions — please wait a moment and try again." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } },
+    );
+  }
+
   const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
