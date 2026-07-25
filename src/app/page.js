@@ -89,7 +89,7 @@ export default function Home() {
   // A grid with an explicit 1fr row, not flex: the stage needs a definite
   // height for R3F to measure, and flex-basis alone leaves it short.
   return (
-    <div className="grid h-dvh grid-cols-1 grid-rows-[1fr_auto] overflow-hidden">
+    <div className="grid h-dvh min-w-0 grid-cols-1 grid-rows-[1fr_auto] overflow-hidden">
       {/* Stage: everything left over after the controls claim their height. */}
       <div className="relative min-h-0 overflow-hidden bg-linear-to-b from-muted/20 to-muted/60">
         <Avatar analyser={analyser} className="absolute inset-0" />
@@ -130,7 +130,10 @@ export default function Home() {
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Stacked on narrow screens: side by side, the pair's combined
+              minimum width is what forces the whole shell wider than the
+              viewport. */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Select
               items={VOICES}
               value={voice}
@@ -157,7 +160,7 @@ export default function Home() {
               type="submit"
               size="lg"
               disabled={!text.trim() || isLoading}
-              className="px-6"
+              className="w-full px-6 sm:w-auto"
             >
               {isLoading ? (
                 <>
