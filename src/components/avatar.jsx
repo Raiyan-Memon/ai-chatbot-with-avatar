@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, useGLTF } from "@react-three/drei";
+import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
 // Built from avatar.vrm by scripts/optimize-model.sh: textures downsized to
@@ -69,6 +69,10 @@ const ELBOW_BEND = 0.22;
 const THINK_YAW = 0.3;
 const THINK_PITCH = -0.13;
 const THINK_TILT = 0.1;
+
+// Where the name tag sits relative to the camera's focus point, in metres.
+// Down and to one side, so it sits clear of the face.
+const LABEL_OFFSET = { x: 0.15, y: -0.14, z: 0.05 };
 
 const FRAME_HEIGHT = 0.4;
 const FRAME_WIDTH = 0.34;
@@ -387,10 +391,11 @@ function useMouthMotion(analyser) {
   return advance;
 }
 
-function Model({ analyser, url, onRig, onReady, thinking }) {
+function Model({ analyser, url, onRig, onReady, thinking, label }) {
   const { scene } = useGLTF(url);
   const { camera, controls } = useThree();
   const advance = useMouthMotion(analyser);
+  const [labelAt, setLabelAt] = React.useState(null);
 
   // A model with no blendshapes cannot move its mouth at all. Surface that
   // instead of failing silently, which just looks like broken lip sync.
@@ -439,6 +444,14 @@ function Model({ analyser, url, onRig, onReady, thinking }) {
     if (!current.framed && controls) {
       current.focus = frameOn(scene, camera, controls);
       current.framed = true;
+
+      // Anchored in world space beside the head, so orbiting carries the label
+      // around with the avatar instead of leaving it pinned to the screen.
+      setLabelAt([
+        current.focus.x + LABEL_OFFSET.x,
+        current.focus.y + LABEL_OFFSET.y,
+        current.focus.z + LABEL_OFFSET.z,
+      ]);
     }
 
     // Reasserted every frame: OrbitControls keeps resetting target to the
@@ -459,7 +472,21 @@ function Model({ analyser, url, onRig, onReady, thinking }) {
     animateIdle(current.idle, current.scene, delta, openness, gesture, thinking);
   });
 
-  return <primitive object={scene} />;
+  return (
+    <>
+      <primitive object={scene} />
+
+      {label && labelAt && (
+        // DOM rather than 3D text: it inherits the site's font, stays crisp at
+        // any distance, and needs no font file fetched from a CDN.
+        <Html position={labelAt} center zIndexRange={[20, 0]}>
+          <span className="pointer-events-none rounded-full bg-background/75 px-2.5 py-1 text-xs font-medium whitespace-nowrap text-foreground/80 shadow-sm backdrop-blur-sm">
+            {label}
+          </span>
+        </Html>
+      )}
+    </>
+  );
 }
 
 /** Stands in until a real model is dropped in, so the pipeline is testable. */
@@ -662,6 +689,7 @@ export function Avatar({ analyser, className, thinking, name = "the avatar" }) {
                 onRig={setRiggedForSpeech}
                 onReady={() => setOnScreen(true)}
                 thinking={thinking}
+                label={name}
               />
             </React.Suspense>
           </ModelBoundary>
