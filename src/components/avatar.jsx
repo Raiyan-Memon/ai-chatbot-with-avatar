@@ -62,6 +62,13 @@ const ARM_REST = 1.15;
 // Resting elbow flexion, so the arms aren't held rigidly straight.
 const ELBOW_BEND = 0.22;
 
+// Shot composition, in metres of the model to keep in view. Height is the
+// portrait crop; width stops a narrow panel slicing the head. Drop shifts the
+// aim below the head bone — raise it to include more chest.
+const FRAME_HEIGHT = 0.4;
+const FRAME_WIDTH = 0.34;
+const FRAME_DROP = 0.01;
+
 const IDLE_BONES = {
   head: /head$/i,
   neck: /neck$/i,
@@ -257,11 +264,18 @@ function frameOn(scene, camera, controls) {
   let distance;
 
   if (head) {
-    // Framed on the upper body rather than the face: hand gestures happen
-    // around hip height and would otherwise sit entirely outside the shot.
     head.getWorldPosition(focus);
-    focus.y -= 0.01;
-    distance = 0.75;
+    focus.y -= FRAME_DROP;
+
+    // Fitted on both axes. A perspective camera only constrains height, so a
+    // narrow panel crops the face at the ears while a wide one strands it in
+    // empty space — take whichever distance is further back. On a wide panel
+    // this resolves to the same close portrait as a fixed 0.75.
+    const half = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+    distance = Math.max(
+      FRAME_HEIGHT / (2 * half),
+      FRAME_WIDTH / (2 * half * camera.aspect),
+    );
   } else {
     const box = new THREE.Box3().setFromObject(scene);
     box.getCenter(focus);
@@ -634,11 +648,16 @@ export function Avatar({ analyser, className }) {
           status === "missing" && placeholder
         )}
 
+        {/* Turn left and right only. Zoom is off so the framing stays as
+            composed and the wheel scrolls the page instead of pulling the
+            camera inside the head; the polar clamp keeps the shot near eye
+            level rather than letting it swing overhead or under the floor. */}
         <OrbitControls
           makeDefault
           enablePan={false}
-          minDistance={0.35}
-          maxDistance={6}
+          enableZoom={false}
+          minPolarAngle={Math.PI / 2 - 0.32}
+          maxPolarAngle={Math.PI / 2 + 0.18}
         />
       </Canvas>
 

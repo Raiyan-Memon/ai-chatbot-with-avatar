@@ -17,12 +17,13 @@ import { useAudioAnalyser } from "@/hooks/use-audio-analyser";
 
 const OWNER = {
   name: "Raiyan Memon",
+  firstName: "Raiyan",
   initials: "RM",
   role: "Software Engineer",
 };
 
-// The single clearest signal of what a visitor is allowed to ask. Written as a
-// recruiter would phrase it, not as a feature list.
+// The clearest signal of what a visitor may ask. Phrased the way a recruiter
+// would say it, not as a feature list.
 const PROMPTS = [
   "What's your background?",
   "What tech do you work with?",
@@ -48,7 +49,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
-  const [hasAsked, setHasAsked] = useState(false);
+  const [lastAsked, setLastAsked] = useState(null);
   const audioRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -74,7 +75,10 @@ export default function Home() {
 
     setIsLoading(true);
     setError(null);
-    setHasAsked(true);
+    setLastAsked(value);
+    // Cleared on send, as every chat does — the question is echoed in the
+    // panel above, so nothing is lost.
+    setText("");
 
     // The AudioContext starts suspended; this click is the gesture that frees it.
     await resume();
@@ -94,14 +98,17 @@ export default function Home() {
       setAudioUrl(URL.createObjectURL(await response.blob()));
     } catch (err) {
       setError(err.message);
+      // Put the question back so a failed request can just be re-sent, rather
+      // than the visitor having to retype it.
+      setText(value);
     } finally {
       setIsLoading(false);
     }
   }
 
   function handleKeyDown(event) {
-    // Enter sends, Shift+Enter makes a new line — the convention every chat
-    // interface uses, so visitors do not have to be told.
+    // Enter sends, Shift+Enter breaks the line — the convention every chat
+    // interface uses, so visitors never have to be told.
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       handleSubmit(event);
@@ -114,130 +121,142 @@ export default function Home() {
   }
 
   return (
-    <div className="grid h-dvh min-w-0 grid-cols-1 grid-rows-[1fr_auto] overflow-hidden">
-      <div className="relative min-h-0 overflow-hidden bg-linear-to-b from-muted/20 to-muted/60">
+    // Split rather than stacked: overlaying a header and greeting on the avatar
+    // ate the stage from both ends. Side by side on desktop, avatar over panel
+    // on phones.
+    <div className="grid h-dvh min-w-0 grid-rows-[38vh_1fr] overflow-hidden lg:grid-cols-[1fr_27rem] lg:grid-rows-1">
+      <div className="relative min-h-0 min-w-0 overflow-hidden bg-linear-to-b from-muted/30 to-muted/70">
         <Avatar analyser={analyser} className="absolute inset-0" />
+      </div>
 
-        {/* Identity, over a scrim so it stays legible against the avatar. */}
-        <header className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-3 bg-linear-to-b from-background/95 via-background/70 to-transparent px-5 pt-4 pb-10 sm:px-8 sm:pt-6">
+      <aside className="flex min-h-0 min-w-0 flex-col border-t bg-card lg:border-t-0 lg:border-l">
+        <header className="flex items-center gap-3 border-b px-5 py-4 sm:px-6">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
             {OWNER.initials}
           </div>
 
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="truncate text-base font-semibold text-foreground">
-                {OWNER.name}
-              </h1>
+              <h1 className="truncate text-base font-semibold">{OWNER.name}</h1>
               <span className="shrink-0 rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                 AI
               </span>
             </div>
             <p className="truncate text-xs text-muted-foreground">
-              {OWNER.role} · ask me anything about my work
+              {OWNER.role}
             </p>
           </div>
         </header>
 
-        {/* Greeting, retired once the visitor has actually asked something. */}
-        {!hasAsked && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-background/95 via-background/70 to-transparent px-6 pt-12 pb-5 text-center">
-            <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
-              Hi — I&apos;m {OWNER.name.split(" ")[0]}&apos;s AI assistant. Ask
-              about my experience, projects or skills and I&apos;ll answer out
-              loud.
+        {/* Scrolls independently. This is where answers will go. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-5 sm:px-6">
+          {lastAsked ? (
+            <div className="flex flex-col gap-2">
+              <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-3.5 py-2.5 text-sm text-background">
+                {lastAsked}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {isLoading ? "Thinking…" : "Speaking the reply aloud."}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Hi — I&apos;m {OWNER.firstName}&apos;s AI assistant. Ask about his
+              experience, projects or skills and I&apos;ll answer out loud.
             </p>
-          </div>
-        )}
-      </div>
+          )}
 
-      <div className="border-t bg-card/90 backdrop-blur-sm">
-        <div className="mx-auto w-full max-w-2xl px-4 pt-3 pb-4 sm:px-6 sm:pb-5">
-          {/* Scrolls sideways rather than wrapping, so the row height is
-              predictable and the stage above never reflows. */}
-          <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {/* Kept on screen after asking: without a conversation history there
+              is nothing else to come back to, so these stay the way forward. */}
+          <div className="flex flex-col items-start gap-2">
+            <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              Try asking
+            </p>
             {PROMPTS.map((prompt) => (
               <button
                 key={prompt}
                 type="button"
                 onClick={() => askPrompt(prompt)}
-                className="shrink-0 rounded-full border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="rounded-full border border-border bg-background px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {prompt}
               </button>
             ))}
           </div>
-
-          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-            {error && (
-              <p
-                role="alert"
-                className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              >
-                {error}
-              </p>
-            )}
-
-            <div className="relative">
-              <Textarea
-                ref={inputRef}
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                onKeyDown={handleKeyDown}
-                maxLength={MAX_CHARS}
-                rows={2}
-                placeholder={`Ask me anything about ${OWNER.name.split(" ")[0]}…`}
-                aria-label={`Ask a question about ${OWNER.name}`}
-                className="h-20 min-h-20 resize-none overflow-y-auto pr-12 field-sizing-fixed"
-              />
-
-              <Button
-                type="submit"
-                size="icon"
-                disabled={!text.trim() || isLoading}
-                aria-label="Send question"
-                className="absolute right-2 bottom-2 size-8 rounded-full"
-              >
-                {isLoading ? (
-                  <Loader2Icon className="animate-spin" />
-                ) : (
-                  <SendHorizontalIcon />
-                )}
-              </Button>
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <Select
-                items={VOICES}
-                value={voice}
-                onValueChange={(next) => setVoice(next)}
-              >
-                <SelectTrigger
-                  aria-label="Voice"
-                  size="sm"
-                  className="h-8 w-auto min-w-0 max-w-52 text-xs text-muted-foreground"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {VOICES.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <p className="shrink-0 text-[11px] text-muted-foreground">
-                Press Enter to send
-              </p>
-            </div>
-
-            {/* Always mounted and hidden: the Web Audio graph binds to this node. */}
-            <audio ref={audioRef} src={audioUrl ?? undefined} className="hidden" />
-          </form>
         </div>
-      </div>
+
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-3 border-t px-5 py-4 sm:px-6"
+        >
+          {error && (
+            <p
+              role="alert"
+              className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              {error}
+            </p>
+          )}
+
+          <div className="relative">
+            <Textarea
+              ref={inputRef}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={handleKeyDown}
+              maxLength={MAX_CHARS}
+              rows={2}
+              placeholder={`Ask me anything about ${OWNER.firstName}…`}
+              aria-label={`Ask a question about ${OWNER.name}`}
+              className="h-20 min-h-20 resize-none overflow-y-auto pr-12 field-sizing-fixed"
+            />
+
+            <Button
+              type="submit"
+              size="icon"
+              disabled={!text.trim() || isLoading}
+              aria-label="Send question"
+              className="absolute right-2 bottom-2 size-8 rounded-full"
+            >
+              {isLoading ? (
+                <Loader2Icon className="animate-spin" />
+              ) : (
+                <SendHorizontalIcon />
+              )}
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <Select
+              items={VOICES}
+              value={voice}
+              onValueChange={(next) => setVoice(next)}
+            >
+              <SelectTrigger
+                aria-label="Voice"
+                size="sm"
+                className="h-8 w-auto min-w-0 max-w-44 text-xs text-muted-foreground"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {VOICES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <p className="shrink-0 text-[11px] text-muted-foreground">
+              Enter to send
+            </p>
+          </div>
+
+          {/* Always mounted and hidden: the Web Audio graph binds to this node. */}
+          <audio ref={audioRef} src={audioUrl ?? undefined} className="hidden" />
+        </form>
+      </aside>
     </div>
   );
 }
