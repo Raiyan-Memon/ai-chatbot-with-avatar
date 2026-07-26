@@ -58,8 +58,10 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
-  const [lastAsked, setLastAsked] = useState(null);
-  const [answer, setAnswer] = useState(null);
+  // The whole conversation, in order — { role: "user" | "assistant", content
+  // }[]. This is the only place it lives; nothing is persisted server-side,
+  // so it resends with every question and disappears on refresh or Reset.
+  const [messages, setMessages] = useState([]);
   const [avatarReady, setAvatarReady] = useState(false);
   const [greetingBlocked, setGreetingBlocked] = useState(false);
   // True only once sound has genuinely been confirmed audible — not merely
@@ -80,6 +82,7 @@ export default function Home() {
   const greetingAudioRef = useRef(null);
   const speechBlobUrlRef = useRef(null);
   const inputRef = useRef(null);
+  const transcriptRef = useRef(null);
 
   function resetPage() {
     if (audioRef.current) {
@@ -101,8 +104,7 @@ export default function Home() {
     setIsLoading(false);
     setError(null);
     setAudioUrl(null);
-    setLastAsked(null);
-    setAnswer(null);
+    setMessages([]);
     setGreetingBlocked(false);
     setGreetingHeard(false);
     setGreetingAttempted(false);
@@ -127,6 +129,13 @@ export default function Home() {
         URL.revokeObjectURL(speechBlobUrlRef.current);
     };
   }, []);
+
+  // A single Q&A pair never needed scrolling; a real back-and-forth does —
+  // keep the latest turn (or the "Thinking…" indicator) in view as it grows.
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, isLoading]);
 
   // navigator.onLine only reflects the network interface (Wi-Fi/ethernet up
   // or down) — it can't confirm the internet itself is reachable, since no
@@ -248,9 +257,13 @@ export default function Home() {
     }
     setIsLoading(true);
     setError(null);
-    setLastAsked(value);
-    setAnswer(null);
     setText("");
+
+    // Captured before the new turn is appended: this is exactly the prior
+    // conversation the server should see for "tell me more about that" to
+    // resolve correctly, with the new question sent separately.
+    const history = messages;
+    setMessages((prev) => [...prev, { role: "user", content: value }]);
 
     await resume();
 
@@ -260,7 +273,7 @@ export default function Home() {
       const chat = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: value }),
+        body: JSON.stringify({ question: value, history }),
       });
 
       const result = await chat.json().catch(() => null);
@@ -290,9 +303,10 @@ export default function Home() {
       }
       const objectUrl = URL.createObjectURL(blob);
       speechBlobUrlRef.current = objectUrl;
-      // Both flip in the same tick: React batches these, so the text and the
-      // audio-play effect it triggers land on the same render together.
-      setAnswer(reply);
+      // Both flip in the same tick: React batches these, so the transcript
+      // and the audio-play effect it triggers land on the same render
+      // together.
+      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
       setAudioUrl(objectUrl);
     } catch (err) {
       // fetch() itself throws a TypeError for a network failure (dropped
@@ -305,9 +319,13 @@ export default function Home() {
           ? "I lost the connection partway through — check you're online and send that again."
           : err.message,
       );
-      // Only worth restoring if nothing came back — once there is an answer on
-      // screen, refilling the box would just look like the question failed.
-      if (!reply) setText(value);
+      // Only worth rolling back if nothing came back — once there is an
+      // answer, removing the question would make it look like the question
+      // itself failed rather than just the voice.
+      if (!reply) {
+        setText(value);
+        setMessages((prev) => prev.slice(0, -1));
+      }
     } finally {
       setIsLoading(false);
     }
@@ -437,28 +455,47 @@ export default function Home() {
           </p>
         )}
 
-        {/* Scrolls independently. This is where answers will go. */}
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 sm:gap-5 sm:px-6 sm:py-5">
-          {lastAsked ? (
-            <div className="flex flex-col gap-3">
-              <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-3.5 py-2.5 text-sm text-background">
-                {lastAsked}
-              </div>
-
-              {answer ? (
-                <div className="max-w-[92%] rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm leading-relaxed">
-                  {answer}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">Thinking…</p>
-              )}
-            </div>
-          ) : (
+        {/* Scrolls independently, and to its own bottom as the conversation
+            grows — see the transcriptRef effect above. */}
+        <div
+          ref={transcriptRef}
+          className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 sm:gap-5 sm:px-6 sm:py-5"
+        >
+          {messages.length === 0 ? (
             <p className="text-sm leading-relaxed text-muted-foreground">
               Hi, I&apos;m {ASSISTANT} — {OWNER.firstName}&apos;s AI assistant.
               Ask me about his experience, projects or skills and I&apos;ll
               answer out loud.
             </p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {/* Index is safe as a key here: turns are only ever appended or,
+                  on failure, popped from the end — never reordered or spliced
+                  from the middle. */}
+              {messages.map((message, index) =>
+                message.role === "user" ? (
+                  <div
+                    key={index}
+                    data-role="user"
+                    className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-foreground px-3.5 py-2.5 text-sm text-background"
+                  >
+                    {message.content}
+                  </div>
+                ) : (
+                  <div
+                    key={index}
+                    data-role="assistant"
+                    className="max-w-[92%] rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm leading-relaxed"
+                  >
+                    {message.content}
+                  </div>
+                ),
+              )}
+
+              {isLoading && (
+                <p className="text-xs text-muted-foreground">Thinking…</p>
+              )}
+            </div>
           )}
 
           {/* Kept on screen after asking: without a conversation history there
