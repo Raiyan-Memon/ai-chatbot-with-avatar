@@ -28,13 +28,29 @@ const OWNER = {
 // Her name stays out of the header — the page is selling Raiyan, not her.
 const ASSISTANT = "Zaira";
 
-// The clearest signal of what a visitor may ask. Phrased the way a recruiter
-// would say it, not as a feature list.
+// The clearest signal of what a visitor may ask. Chosen to surface the
+// senior/architect substance in profile.js — "tell me about a recent
+// project" got dropped because it was pulling from the thin personal-projects
+// section instead, undeselling him next to everything else here.
+//
+// "What tech does he work with?" gave way to the AI-era one: it's the more
+// distinctive, senior-signalling question, and "how does he use AI" /
+// "how does he approach system design" cover similar ground to the
+// architecture chip already here — Zaira answers those well if asked, they
+// just don't need their own chip on top of it.
+//
+// "What does he handle beyond writing code?" became the "start to finish"
+// phrasing below — tested both side by side and they pull ~80% the same
+// content, but this one also draws in the working-style paragraph (modules,
+// catching blockers early, product/UX/cost thinking), so it reads as project
+// ownership rather than just a task list, for the same one chip slot.
 const PROMPTS = [
   "What's Raiyan's background?",
-  "What tech does he work with?",
-  "Tell me about a recent project",
-  "What is he looking for next?",
+  "What does a typical day look like for him?",
+  "What's his approach to managing a project from start to finish?",
+  // "In an AI coding era, what does he think a developer's real job is?",
+  "What industries has he built for?",
+  "How does he think about security and architecture?",
   "How can I reach him?",
 ];
 
