@@ -4,6 +4,15 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* A plain custom property, not a Tailwind theme token — this is what makes
+   --spin-angle animatable at all (browsers only tween a custom property
+   through a numeric range once its <angle> syntax is declared). */
+@property --spin-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
 @theme {
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-indeterminate: indeterminate 1.15s ease-in-out infinite;
@@ -25,6 +34,15 @@
     }
     to {
       transform: translateX(420%);
+    }
+  }
+
+  /* One comet of light circling the input while Zaira is thinking. */
+  --animate-spin-border: spin-border 2.4s linear infinite;
+
+  @keyframes spin-border {
+    to {
+      --spin-angle: 360deg;
     }
   }
 }
