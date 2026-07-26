@@ -267,8 +267,11 @@ export default function Home() {
       if (!chat.ok) throw new Error(result?.error ?? "Could not get an answer");
 
       reply = result.answer;
-      // Shown before the audio is ready: reading should never wait on speech.
-      setAnswer(reply);
+      // Deliberately not shown yet: Groq answers in under a second, TTS then
+      // takes another 1.5-2s, and revealing the text the moment it arrives
+      // left it sitting there read-but-silent for that whole gap. Holding it
+      // back until the audio is also ready means the text and her voice
+      // arrive on the same beat instead of the text visibly leading.
 
       const speech = await fetch("/api/tts", {
         method: "POST",
@@ -287,6 +290,9 @@ export default function Home() {
       }
       const objectUrl = URL.createObjectURL(blob);
       speechBlobUrlRef.current = objectUrl;
+      // Both flip in the same tick: React batches these, so the text and the
+      // audio-play effect it triggers land on the same render together.
+      setAnswer(reply);
       setAudioUrl(objectUrl);
     } catch (err) {
       // fetch() itself throws a TypeError for a network failure (dropped
