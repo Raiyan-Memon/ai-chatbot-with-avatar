@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2Icon, SendHorizontalIcon, Volume2Icon } from "lucide-react";
+import {
+  Loader2Icon,
+  MoonIcon,
+  SendHorizontalIcon,
+  SunIcon,
+  Volume2Icon,
+} from "lucide-react";
 
 import { Avatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
@@ -175,6 +181,17 @@ export default function Home() {
       // typeof navigator === "undefined" ? true : navigator.onLine,
       true,
   );
+  // Starts false on both server and client so the first client render
+  // matches the server-rendered markup exactly — the layout's inline script
+  // may have already put the real class on <html> before hydration even
+  // runs, and reading it in a lazy initializer here would make this render
+  // disagree with the server's and trip a hydration error. The effect below
+  // corrects it immediately after mount instead.
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    setIsDark(document.documentElement.classList.contains("dark"));
+  }, []);
   const audioRef = useRef(null);
   const greetingAudioRef = useRef(null);
   const speechBlobUrlRef = useRef(null);
@@ -437,6 +454,13 @@ export default function Home() {
     }
   }
 
+  function toggleTheme() {
+    const next = !isDark;
+    setIsDark(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("theme", next ? "dark" : "light");
+  }
+
   function askPrompt(prompt) {
     setInteracted(true);
     if (greetingAudioRef.current) {
@@ -513,6 +537,21 @@ export default function Home() {
           </div>
 
           <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={toggleTheme}
+              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              className="size-8"
+            >
+              {isDark ? (
+                <SunIcon className="size-4" />
+              ) : (
+                <MoonIcon className="size-4" />
+              )}
+            </Button>
             {/* Kept small and permanent once sound is confirmed working — the
                 big CTA below only needs to exist until that first listen. */}
             {greetingHeard && (

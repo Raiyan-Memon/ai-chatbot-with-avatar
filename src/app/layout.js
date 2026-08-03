@@ -31,9 +31,20 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      {/* Starts the model download alongside the HTML instead of waiting for
-          React to hydrate and run the fetch. */}
-      <link rel="preload" href="/avatar-optimized.glb" as="fetch" />
+      <head>
+        {/* Starts the model download alongside the HTML instead of waiting for
+            React to hydrate and run the fetch. */}
+        <link rel="preload" href="/avatar-optimized.glb" as="fetch" />
+
+        {/* Runs before paint so the page never flashes light before switching
+            to a stored/OS dark preference. Can't live in a React effect —
+            those only run after the first paint. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("theme");var d=t?t==="dark":window.matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.classList.toggle("dark",d);}catch(e){}})();`,
+          }}
+        />
+      </head>
 
       <body className="h-full overflow-hidden flex flex-col">{children}</body>
     </html>
