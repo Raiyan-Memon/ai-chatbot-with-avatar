@@ -454,11 +454,55 @@ export default function Home() {
     }
   }
 
-  function toggleTheme() {
+  function toggleTheme(event) {
     const next = !isDark;
-    setIsDark(next);
-    document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("theme", next ? "dark" : "light");
+    const applyTheme = () => {
+      document.documentElement.classList.toggle("dark", next);
+      localStorage.setItem("theme", next ? "dark" : "light");
+      setIsDark(next);
+    };
+
+    // Chromium/Safari only for now — Firefox falls back to the plain CSS
+    // color transition already on body/background, which is a fine result
+    // on its own, so nothing else needs feature-detecting here.
+    if (!document.startViewTransition) {
+      applyTheme();
+      return;
+    }
+
+    // Origin is the button itself, not the click point: clientX/Y would work
+    // too, but keyboard activation (Enter/Space) has no meaningful pointer
+    // position, and the button is the one fixed thing both input methods
+    // agree on.
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const radius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y),
+    );
+
+    const transition = document.startViewTransition(() => applyTheme());
+
+    transition.ready.then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${radius}px at ${x}px ${y}px)`,
+          ],
+        },
+        {
+          duration: 500,
+          easing: "ease-in-out",
+          // The browser stacks the new-state screenshot above the old one by
+          // default, so growing its clip-path from 0 to full screen reads as
+          // the incoming theme spreading outward from the button — true in
+          // both directions, no need to branch on light vs dark.
+          pseudoElement: "::view-transition-new(root)",
+        },
+      );
+    });
   }
 
   function askPrompt(prompt) {

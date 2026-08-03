@@ -171,3 +171,31 @@
     @apply font-sans;
   }
 }
+
+/* Firefox (no View Transitions support) gets a soft cross-fade instead of an
+   instant flip. Harmless on Chromium/Safari too — the whole document is
+   captured into the transition's screenshots before this ever gets a chance
+   to render mid-transition, so it never fights the clip-path reveal below. */
+@media not (prefers-reduced-motion: reduce) {
+  body {
+    transition:
+      background-color 0.3s ease,
+      color 0.3s ease;
+  }
+}
+
+/* Replaces the browser's default cross-fade with nothing, so the only
+   motion visible is the clip-path circle driven from page.js. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 2;
+}
