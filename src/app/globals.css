@@ -184,6 +184,16 @@
   }
 }
 
+/* The UA stylesheet sizes the view-transition snapshot to the layout
+   viewport, which on mobile stays tall even once the address bar has shrunk
+   the visible area — the circle's radius is computed against the real,
+   currently-visible box (see page.js), so without this the snapshot box and
+   the math disagree and the reveal looks like it starts from the wrong
+   place. */
+::view-transition {
+  height: 100dvh;
+}
+
 /* Replaces the browser's default cross-fade with nothing, so the only
    motion visible is the clip-path circle driven from page.js. */
 ::view-transition-old(root),

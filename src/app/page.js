@@ -477,9 +477,18 @@ export default function Home() {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
+
+    // visualViewport, not window.innerWidth/innerHeight: on mobile the layout
+    // viewport (what innerHeight reports) stays tall even while the address
+    // bar is visible and shrinking the visible area, so a radius sized off it
+    // overshoots the real screen — the circle was reading as still mid-growth
+    // (looking like it "starts from the top") when it had actually already
+    // finished relative to the wrong, taller box.
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
     const radius = Math.hypot(
-      Math.max(x, window.innerWidth - x),
-      Math.max(y, window.innerHeight - y),
+      Math.max(x, viewportWidth - x),
+      Math.max(y, viewportHeight - y),
     );
 
     const transition = document.startViewTransition(() => applyTheme());
