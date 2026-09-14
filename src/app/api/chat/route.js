@@ -3,7 +3,8 @@ import { RESUME } from "@/lib/resume";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.1-8b-instant";
+// const MODEL = "llama-3.1-8b-instant";
+const MODEL = "groq/compound-mini";
 
 // A backstop, not the actual length control — the target (2-4 sentences,
 // under 60 words, ~80 tokens) comes from the prompt itself, reinforced with a
